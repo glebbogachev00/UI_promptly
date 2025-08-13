@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Image → Code (OpenAI API)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { --bg:#0b0b0f; --panel:rgba(255,255,255,.06); }
+    body { background: var(--bg); }
+  </style>
+</head>
+<body class="text-white antialiased">
+  <main class="max-w-4xl mx-auto p-6 space-y-6">
+    <header class="flex items-center justify-between">
+      <h1 class="text-2xl font-semibold">Image → Code (OpenAI API)</h1>
+      <div class="text-xs text-white/60">HTML+Tailwind · images → placeholders</div>
+    </header>
+
+    <section class="bg-[var(--panel)] rounded-xl p-4 space-y-3">
+      <h2 class="font-medium">1) Upload screenshot</h2>
+      <input id="imgInput" type="file" accept="image/*" class="block" />
+      <img id="imgPreview" class="hidden max-h-80 rounded-md border border-white/10" alt="preview" />
+      <div class="flex items-center gap-2 pt-2">
+        <label for="modelSel" class="text-sm text-white/70">Model</label>
+        <select id="modelSel" class="bg-black/40 border border-white/10 rounded px-2 py-1 text-sm">
+          <option value="gpt-4o-mini" selected>gpt-4o-mini (cheap)</option>
+          <option value="gpt-4o">gpt-4o (higher quality)</option>
+        </select>
+      </div>
+      <button id="buildBtn" class="px-3 py-1.5 rounded bg-fuchsia-600 text-sm">Build with API</button>
+      <div id="status" class="text-sm text-white/70"></div>
+    </section>
+
+    <section class="bg-[var(--panel)] rounded-xl p-4 space-y-3">
+      <h2 class="font-medium">2) Preview / Download HTML</h2>
+      <textarea id="htmlBox" class="w-full h-64 font-mono text-sm p-2 bg-black/40 rounded border border-white/10" placeholder="HTML appears here" spellcheck="false"></textarea>
+      <div class="flex gap-3">
+        <button id="previewBtn"  class="px-3 py-1.5 rounded bg-sky-600 text-sm">Preview</button>
+        <button id="downloadBtn" class="px-3 py-1.5 rounded bg-neutral-800 text-sm">Download HTML</button>
+      </div>
+      <iframe id="previewFrame" class="w-full h-96 border border-white/10 rounded"></iframe>
+    </section>
+
+    <footer class="text-center text-xs text-white/50">
+      Tip: If the page is very busy, crop to one section for best fidelity.
+    </footer>
+  </main>
+
+  <script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const imgInput = document.getElementById('imgInput');
+    const imgPreview = document.getElementById('imgPreview');
+    const modelSel = document.getElementById('modelSel');
+    const buildBtn = document.getElementById('buildBtn');
+    const statusEl = document.getElementById('status');
+    const htmlBox = document.getElementById('htmlBox');
+    const previewBtn = document.getElementById('previewBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const previewFrame = document.getElementById('previewFrame');
+
+    imgInput.addEventListener('change', () => {
+      const f = imgInput.files?.[0];
+      if (!f) return;
+      imgPreview.src = URL.createObjectURL(f);
+      imgPreview.classList.remove('hidden');
+    });
+
+    buildBtn.addEventListener('click', async () => {
+      const file = imgInput?.files?.[0];
+      if (!file) { statusEl.textContent = 'Please choose an image first.'; return; }
+      statusEl.textContent = 'Uploading & building…';
+
+      const dataUrl = await new Promise((resolve) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.readAsDataURL(file);
+      });
+
+      try {
+        const resp = await fetch('/api/build', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl, model: modelSel.value })
+        });
+
+        const text = await resp.text();
+        let out = {};
+        try { out = JSON.parse(text); } catch { /* leave as {} */ }
+
+        if (!resp.ok) {
+          const errMsg = (out && out.error) ? out.error : `HTTP ${resp.status} — ${text.slice(0,200)}`;
+          throw new Error(errMsg);
+        }
+
+        htmlBox.value = out.html || '';
+        statusEl.textContent = 'Done. HTML returned.';
+        const url = URL.createObjectURL(new Blob([htmlBox.value], { type: 'text/html' }));
+        previewFrame.src = url;
+      } catch (e) {
+        statusEl.textContent = 'Error: ' + (e.message || e);
+      }
+    });
+
+    previewBtn.addEventListener('click', () => {
+      const html = htmlBox.value || '<!doctype html><meta charset="utf-8"><title>Empty</title><body style="font:14px system-ui;padding:16px;color:#999">No HTML yet.</body>';
+      const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      previewFrame.src = url;
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      const html = htmlBox.value || '';
+      const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      const a = document.createElement('a'); a.href = url; a.download = 'page.html'; a.click();
+      URL.revokeObjectURL(url);
+    });
+  });
+  </script>
+</body>
+</html>
